@@ -24,7 +24,9 @@ const questions = JSON.parse(
 // }
 const rooms = new Map();
 
-const DISCONNECT_GRACE_MS = 10 * 60 * 1000; // 10 minutes — covers phone locks, calls, app switches
+// Rooms stay alive when players disconnect — they can rejoin anytime with the same code
+// from the same device. After 24h of total inactivity (no one connected), the room is swept.
+const ROOM_INACTIVE_TTL_MS = 24 * 60 * 60 * 1000;
 
 function generateRoomCode() {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -238,10 +240,18 @@ io.on('connection', (socket) => {
     socket.leave(code);
     if (room.players.size === 0) {
       rooms.delete(code);
-    } else {
-      io.to(code).emit('player_left', { playerId });
-      broadcastRoomState(code);
+      return;
     }
+    // If everyone else is also disconnected, no point keeping the room.
+    const anyConnected = Array.from(room.players.values()).some(
+      (p) => !p.disconnectedAt
+    );
+    if (!anyConnected) {
+      rooms.delete(code);
+      return;
+    }
+    io.to(code).emit('player_left', { playerId });
+    broadcastRoomState(code);
   });
 
   socket.on('disconnect', () => {
@@ -255,32 +265,31 @@ io.on('connection', (socket) => {
     p.socketId = null;
     p.disconnectedAt = Date.now();
 
-    // Tell partner this player is reconnecting (soft, not "left")
+    // Tell partner this player is away. Room stays alive — they can rejoin with the same code.
     io.to(code).emit('player_disconnecting', {
       playerId,
       name: p.name,
-      graceMs: DISCONNECT_GRACE_MS,
     });
-
-    // After grace period, if still disconnected, fully remove
-    setTimeout(() => {
-      const r = rooms.get(code);
-      if (!r) return;
-      const stillP = r.players.get(playerId);
-      if (!stillP || !stillP.disconnectedAt) return; // reconnected, nothing to do
-
-      r.players.delete(playerId);
-      r.answers.delete(playerId);
-
-      if (r.players.size === 0) {
-        rooms.delete(code);
-      } else {
-        io.to(code).emit('player_left', { playerId });
-        broadcastRoomState(code);
-      }
-    }, DISCONNECT_GRACE_MS);
   });
 });
+
+// Background sweep: drop rooms where every player has been disconnected for >24h.
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, room] of rooms.entries()) {
+    const players = Array.from(room.players.values());
+    if (players.length === 0) {
+      rooms.delete(code);
+      continue;
+    }
+    const allDisconnected = players.every((p) => p.disconnectedAt);
+    if (!allDisconnected) continue;
+    const lastSeen = Math.max(...players.map((p) => p.disconnectedAt));
+    if (now - lastSeen > ROOM_INACTIVE_TTL_MS) {
+      rooms.delete(code);
+    }
+  }
+}, 60 * 60 * 1000); // every hour
 
 server.listen(PORT, () => {
   console.log(`Reveal running on http://localhost:${PORT}`);
