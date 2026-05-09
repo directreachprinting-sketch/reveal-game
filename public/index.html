@@ -284,6 +284,37 @@
     font-size: 12px;
     letter-spacing: 2px;
   }
+  .partner-tag {
+    text-align: center;
+    color: var(--accent);
+    font-size: 14px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+  .partner-tag .label {
+    color: var(--text-dim);
+    font-weight: 400;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-right: 6px;
+  }
+  .partner-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    margin-left: 6px;
+    vertical-align: middle;
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+  }
+  .partner-dot.away {
+    background: #f59e0b;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+    animation: blink 1.4s infinite;
+  }
   .error {
     background: rgba(239, 68, 68, 0.15);
     border: 1px solid rgba(239, 68, 68, 0.4);
@@ -351,6 +382,11 @@
     <!-- GAME -->
     <div class="screen" id="screen-game">
       <div class="room-tag" id="room-tag-game"></div>
+      <div class="partner-tag hidden" id="partner-tag">
+        <span class="label">Playing with</span>
+        <span id="partner-name">—</span>
+        <span class="partner-dot" id="partner-dot"></span>
+      </div>
       <div class="reconnect-banner hidden" id="reconnect-banner">Partner reconnecting...</div>
 
       <div class="card level-section" id="level-picker">
@@ -560,11 +596,26 @@
       }
     });
 
+    function updatePartnerTag() {
+      const tag = document.getElementById('partner-tag');
+      const nameEl = document.getElementById('partner-name');
+      const dot = document.getElementById('partner-dot');
+      const partner = (state.players || []).find(p => p.id !== state.playerId);
+      if (partner && partner.name) {
+        nameEl.textContent = partner.name;
+        dot.classList.toggle('away', partner.connected === false);
+        tag.classList.remove('hidden');
+      } else {
+        tag.classList.add('hidden');
+      }
+    }
+
     socket.on('room_state', (data) => {
       state.players = data.players;
       // Hide reconnect banner if all players are connected
       const allConnected = data.players.every(p => p.connected !== false);
       if (allConnected) setReconnectBanner(false);
+      updatePartnerTag();
       if (data.players.length === 2) {
         document.getElementById('room-tag-game').textContent = 'ROOM ' + state.code;
         state.onGameScreen = true;
