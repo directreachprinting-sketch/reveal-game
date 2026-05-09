@@ -24,7 +24,7 @@ const questions = JSON.parse(
 // }
 const rooms = new Map();
 
-const DISCONNECT_GRACE_MS = 60 * 1000; // 60 seconds for the partner to come back
+const DISCONNECT_GRACE_MS = 10 * 60 * 1000; // 10 minutes — covers phone locks, calls, app switches
 
 function generateRoomCode() {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
