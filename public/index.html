@@ -435,6 +435,56 @@
   }
   .level-buttons .primary { flex: 2; }
   .level-buttons .secondary { flex: 1; }
+  .unlock-section {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--card-border);
+  }
+  .unlock-btn {
+    width: 100%;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid var(--card-border);
+    background: rgba(255,255,255,0.04);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .unlock-btn:active { transform: scale(0.98); }
+  .unlock-btn.partner-ready {
+    border-color: var(--accent);
+    color: var(--accent);
+    animation: pulseGlow 1.8s ease-in-out infinite;
+  }
+  .unlock-btn.you-ready {
+    background: rgba(192, 132, 252, 0.18);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .unlock-btn.both-ready {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: white;
+    border: none;
+    cursor: default;
+    box-shadow: 0 0 24px var(--accent-glow);
+  }
+  .unlock-btn:disabled { cursor: not-allowed; }
+  .unlock-hint {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 8px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  @keyframes pulseGlow {
+    0%, 100% { box-shadow: 0 0 8px rgba(192, 132, 252, 0.3); }
+    50% { box-shadow: 0 0 24px rgba(192, 132, 252, 0.7); }
+  }
+  .level-tone.locked { color: rgba(245, 158, 11, 0.85); }
 </style>
 </head>
 <body>
@@ -500,6 +550,10 @@
         <div class="level-buttons">
           <button class="primary" id="btn-get-question">Get a Question</button>
           <button class="secondary" id="btn-surprise">Surprise me</button>
+        </div>
+        <div class="unlock-section">
+          <button class="unlock-btn" id="btn-unlock" type="button">🔒 Unlock the deep end</button>
+          <div class="unlock-hint" id="unlock-hint">Both must tap to open levels 8–10</div>
         </div>
       </div>
 
@@ -629,6 +683,9 @@
       onGameScreen: false,
       myReaction: null,
       highestLevel: 0,
+      readyToUnlock: [],
+      deepEndUnlocked: false,
+      deepEndFloor: 8,
     };
 
     function setReconnectBanner(visible, text) {
@@ -766,6 +823,8 @@
       const nameEl = document.getElementById('partner-name');
       const dot = document.getElementById('partner-dot');
       const partner = (state.players || []).find(p => p.id !== state.playerId);
+      // Refresh unlock UI too — partner's name might be needed in the label
+      updateUnlockUI();
       if (partner && partner.name) {
         nameEl.textContent = partner.name;
         dot.classList.toggle('away', partner.connected === false);
@@ -816,7 +875,17 @@
     const levelTone = document.getElementById('level-tone');
     function updateLevelUI() {
       levelDisplay.textContent = slider.value;
-      levelTone.textContent = TONES[slider.value] || '';
+      const lvl = Number(slider.value);
+      const locked = lvl >= state.deepEndFloor && !state.deepEndUnlocked;
+      if (locked) {
+        levelTone.textContent = '🔒 Locked — unlock the deep end together';
+        levelTone.classList.add('locked');
+      } else {
+        levelTone.textContent = TONES[slider.value] || '';
+        levelTone.classList.remove('locked');
+      }
+      // Disable Get a Question if at locked level
+      document.getElementById('btn-get-question').disabled = locked;
     }
     slider.addEventListener('input', updateLevelUI);
     updateLevelUI();
@@ -839,6 +908,48 @@
       document.getElementById('heat-level').textContent = 'L' + (highestLevel || 1);
       meta.classList.remove('hidden');
     }
+
+    function updateUnlockUI() {
+      const btn = document.getElementById('btn-unlock');
+      const hint = document.getElementById('unlock-hint');
+      if (state.deepEndUnlocked) {
+        btn.textContent = '🔓 Deep end unlocked';
+        btn.className = 'unlock-btn both-ready';
+        btn.disabled = true;
+        hint.textContent = "You're both in 💜";
+        return;
+      }
+      const youReady = state.readyToUnlock.includes(state.playerId);
+      const partner = (state.players || []).find(p => p.id !== state.playerId);
+      const partnerReady = partner && state.readyToUnlock.includes(partner.id);
+      btn.disabled = false;
+      btn.classList.remove('partner-ready', 'you-ready', 'both-ready');
+      if (youReady && !partnerReady) {
+        btn.textContent = '💜 You’re ready — waiting for ' + (partner && partner.name ? partner.name : 'partner');
+        btn.classList.add('you-ready');
+        hint.textContent = 'Tap again to un-ready';
+      } else if (!youReady && partnerReady) {
+        btn.textContent = '💜 ' + (partner && partner.name ? partner.name : 'Partner') + ' is ready — tap to match';
+        btn.classList.add('partner-ready');
+        hint.textContent = 'Both must tap to open levels 8–10';
+      } else {
+        btn.textContent = '🔒 Unlock the deep end';
+        hint.textContent = 'Both must tap to open levels 8–10';
+      }
+    }
+
+    document.getElementById('btn-unlock').addEventListener('click', () => {
+      if (state.deepEndUnlocked) return;
+      socket.emit('toggle_unlock');
+    });
+
+    socket.on('unlock_state', (data) => {
+      state.readyToUnlock = (data && data.ready) || [];
+      state.deepEndUnlocked = !!(data && data.unlocked);
+      if (data && data.floor) state.deepEndFloor = data.floor;
+      updateUnlockUI();
+      updateLevelUI();
+    });
 
     socket.on('question', (data) => {
       const isSameQuestion = state.currentQuestion === data.question;

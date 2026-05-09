@@ -24,9 +24,11 @@ const questions = JSON.parse(
 //   submitTimes: Map(playerId -> timestamp),
 //   reactions: Map(playerId -> emoji),
 //   roundNumber, syncStreak, highestLevel,
+//   readyToUnlock: Set(playerId), deepEndUnlocked: bool,
 // }
 const rooms = new Map();
 const SYNC_WINDOW_MS = 5000; // both submit within this → "synced"
+const DEEP_END_FLOOR = 8; // levels >= this require both players to be ready
 
 // Rooms stay alive when players disconnect — they can rejoin anytime with the same code
 // from the same device. After 24h of total inactivity (no one connected), the room is swept.
@@ -111,6 +113,16 @@ function broadcastReactions(code) {
   io.to(code).emit('reactions_update', { reactions: obj });
 }
 
+function broadcastUnlockState(code) {
+  const room = rooms.get(code);
+  if (!room) return;
+  io.to(code).emit('unlock_state', {
+    ready: Array.from(room.readyToUnlock),
+    unlocked: !!room.deepEndUnlocked,
+    floor: DEEP_END_FLOOR,
+  });
+}
+
 io.on('connection', (socket) => {
   let myRoomCode = null;
   let myPlayerId = null;
@@ -133,6 +145,8 @@ io.on('connection', (socket) => {
         roundNumber: 0,
         syncStreak: 0,
         highestLevel: 0,
+        readyToUnlock: new Set(),
+        deepEndUnlocked: false,
       });
       socket.join(code);
       myRoomCode = code;
@@ -167,6 +181,7 @@ io.on('connection', (socket) => {
       // Notify others the player is back
       io.to(code).emit('player_reconnected', { playerId, name: p.name });
       broadcastRoomState(code);
+      broadcastUnlockState(code);
       // Resend current question + answer status, OR tell client to reset to level picker
       if (room.currentQuestion) {
         socket.emit('question', {
@@ -231,10 +246,13 @@ io.on('connection', (socket) => {
     myPlayerId = playerId;
     ack && ack({ ok: true, code, playerId });
     broadcastRoomState(code);
+    broadcastUnlockState(code);
     if (room.currentQuestion) {
       socket.emit('question', {
         level: room.currentLevel,
         question: room.currentQuestion,
+        roundNumber: room.roundNumber,
+        highestLevel: room.highestLevel,
       });
     }
   });
@@ -248,10 +266,15 @@ io.on('connection', (socket) => {
     // "Surprise me" — if level isn't valid, pick a random one
     if (!Number.isInteger(level) || level < 1 || level > 10) {
       if (payload && payload.random) {
-        level = 1 + Math.floor(Math.random() * 10);
+        const max = room.deepEndUnlocked ? 10 : (DEEP_END_FLOOR - 1);
+        level = 1 + Math.floor(Math.random() * max);
       } else {
         return;
       }
+    }
+    // Gate: levels >= DEEP_END_FLOOR require both players to be ready
+    if (level >= DEEP_END_FLOOR && !room.deepEndUnlocked) {
+      return;
     }
     const q = pickRandomQuestion(level);
     if (!q) return;
@@ -286,6 +309,27 @@ io.on('connection', (socket) => {
     });
 
     tryFinalizeReveal(myRoomCode);
+  });
+
+  socket.on('toggle_unlock', () => {
+    if (!myRoomCode || !myPlayerId) return;
+    const room = rooms.get(myRoomCode);
+    if (!room) return;
+    if (room.deepEndUnlocked) return; // already done, no toggling
+    if (room.readyToUnlock.has(myPlayerId)) {
+      room.readyToUnlock.delete(myPlayerId);
+    } else {
+      room.readyToUnlock.add(myPlayerId);
+    }
+    // Both ready? Unlock!
+    const allPlayerIds = Array.from(room.players.keys());
+    const allReady =
+      allPlayerIds.length === 2 &&
+      allPlayerIds.every((pid) => room.readyToUnlock.has(pid));
+    if (allReady) {
+      room.deepEndUnlocked = true;
+    }
+    broadcastUnlockState(myRoomCode);
   });
 
   socket.on('react', (payload) => {
@@ -323,12 +367,14 @@ io.on('connection', (socket) => {
     if (!room) return;
     room.players.delete(playerId);
     room.answers.delete(playerId);
+    room.readyToUnlock.delete(playerId);
+    // The mutual agreement is broken when a partner explicitly leaves — re-lock the deep end
+    room.deepEndUnlocked = false;
     socket.leave(code);
     if (room.players.size === 0) {
       rooms.delete(code);
       return;
     }
-    // If everyone else is also disconnected, no point keeping the room.
     const anyConnected = Array.from(room.players.values()).some(
       (p) => !p.disconnectedAt
     );
@@ -338,6 +384,7 @@ io.on('connection', (socket) => {
     }
     io.to(code).emit('player_left', { playerId });
     broadcastRoomState(code);
+    broadcastUnlockState(code);
   });
 
   socket.on('disconnect', () => {
