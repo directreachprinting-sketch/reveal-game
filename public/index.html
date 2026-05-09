@@ -337,6 +337,104 @@
     text-align: center;
     margin-bottom: 4px;
   }
+  .round-meta {
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    margin-top: 4px;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  .round-meta .round-num {
+    color: var(--accent);
+    font-weight: 700;
+  }
+  .round-meta .heat {
+    color: #f472b6;
+    font-weight: 700;
+  }
+  .sync-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, rgba(251, 146, 60, 0.2), rgba(244, 114, 182, 0.2));
+    border: 1px solid rgba(251, 146, 60, 0.5);
+    color: #fdba74;
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    margin: 8px auto 4px;
+  }
+  .sync-badge .streak {
+    background: rgba(251, 146, 60, 0.4);
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+  }
+  .reaction-section {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--card-border);
+  }
+  .reaction-label {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 10px;
+  }
+  .reaction-row {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .reaction-btn {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    background: rgba(255,255,255,0.06);
+    cursor: pointer;
+    font-size: 26px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s ease, border-color 0.2s ease, background 0.2s ease;
+    padding: 0;
+  }
+  .reaction-btn:active { transform: scale(0.9); }
+  .reaction-btn.mine {
+    border-color: var(--accent);
+    background: rgba(192, 132, 252, 0.2);
+    box-shadow: 0 0 16px rgba(192, 132, 252, 0.4);
+    transform: scale(1.1);
+  }
+  .partner-reaction {
+    text-align: center;
+    margin-top: 12px;
+    color: var(--text-dim);
+    font-size: 13px;
+    min-height: 20px;
+  }
+  .partner-reaction .reaction-emoji {
+    font-size: 22px;
+    vertical-align: middle;
+    margin-left: 6px;
+  }
+  .level-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .level-buttons .primary { flex: 2; }
+  .level-buttons .secondary { flex: 1; }
 </style>
 </head>
 <body>
@@ -389,12 +487,20 @@
       </div>
       <div class="reconnect-banner hidden" id="reconnect-banner">Partner reconnecting...</div>
 
+      <div class="round-meta hidden" id="round-meta">
+        <span>Round <span class="round-num" id="round-num">1</span></span>
+        <span>Heat <span class="heat" id="heat-level">L1</span></span>
+      </div>
+
       <div class="card level-section" id="level-picker">
         <div class="level-label">Level</div>
         <div class="level-display" id="level-display">5</div>
         <input type="range" id="level-slider" min="1" max="10" value="5" />
         <div class="level-tone" id="level-tone"></div>
-        <button class="primary" id="btn-get-question" style="margin-top:16px;">Get a Question</button>
+        <div class="level-buttons">
+          <button class="primary" id="btn-get-question">Get a Question</button>
+          <button class="secondary" id="btn-surprise">Surprise me</button>
+        </div>
       </div>
 
       <div class="card hidden" id="question-card">
@@ -412,8 +518,23 @@
 
       <div class="card hidden" id="reveal-card">
         <div class="level-label" style="text-align:center;">The Reveal</div>
+        <div class="sync-badge hidden" id="sync-badge">
+          <span id="sync-text">Synced ⚡</span>
+          <span class="streak hidden" id="sync-streak">🔥 1</span>
+        </div>
         <div class="question-text" id="reveal-question"></div>
         <div class="reveal-grid" id="reveal-grid"></div>
+        <div class="reaction-section">
+          <div class="reaction-label">React to this round</div>
+          <div class="reaction-row" id="reaction-row">
+            <button class="reaction-btn" data-emoji="🔥" type="button">🔥</button>
+            <button class="reaction-btn" data-emoji="😍" type="button">😍</button>
+            <button class="reaction-btn" data-emoji="😳" type="button">😳</button>
+            <button class="reaction-btn" data-emoji="😂" type="button">😂</button>
+            <button class="reaction-btn" data-emoji="🤔" type="button">🤔</button>
+          </div>
+          <div class="partner-reaction" id="partner-reaction"></div>
+        </div>
         <button class="primary" id="btn-next" style="margin-top:18px;">Next Question</button>
       </div>
     </div>
@@ -506,6 +627,8 @@
       currentQuestion: null,
       submitted: false,
       onGameScreen: false,
+      myReaction: null,
+      highestLevel: 0,
     };
 
     function setReconnectBanner(visible, text) {
@@ -515,12 +638,18 @@
     }
 
     socket.on('connect', () => {
-      // If URL has ?room=CODE, prefill join field
+      // If URL has ?room=CODE, prefill join field. If it differs from a saved session,
+      // the URL wins — clear the session so we don't auto-pull them into a stale room.
       const params = new URLSearchParams(location.search);
       const roomParam = params.get('room');
       if (roomParam) {
+        const upper = roomParam.toUpperCase();
         const input = document.getElementById('join-code');
-        if (!input.value) input.value = roomParam.toUpperCase();
+        if (!input.value) input.value = upper;
+        const existing = getSession();
+        if (existing.room && existing.room !== upper) {
+          clearSession();
+        }
       }
 
       // Auto-rejoin: if we have a saved session, try to rejoin.
@@ -696,15 +825,31 @@
       const level = Number(slider.value);
       socket.emit('pick_level', { level });
     });
+    document.getElementById('btn-surprise').addEventListener('click', () => {
+      socket.emit('pick_level', { random: true });
+    });
+
+    function updateRoundMeta(roundNumber, highestLevel) {
+      const meta = document.getElementById('round-meta');
+      if (!roundNumber) {
+        meta.classList.add('hidden');
+        return;
+      }
+      document.getElementById('round-num').textContent = roundNumber;
+      document.getElementById('heat-level').textContent = 'L' + (highestLevel || 1);
+      meta.classList.remove('hidden');
+    }
 
     socket.on('question', (data) => {
       const isSameQuestion = state.currentQuestion === data.question;
       state.currentQuestion = data.question;
       document.getElementById('q-level').textContent = data.level;
       document.getElementById('question-text').textContent = data.question;
+      updateRoundMeta(data.roundNumber, data.highestLevel);
       if (!isSameQuestion) {
         // Brand new question: reset answer state and switch to question card
         state.submitted = false;
+        state.myReaction = null;
         document.getElementById('answer-input').value = '';
         document.getElementById('answer-input').disabled = false;
         document.getElementById('btn-submit').disabled = false;
@@ -713,9 +858,10 @@
         document.getElementById('question-card').classList.remove('hidden');
         document.getElementById('reveal-card').classList.add('hidden');
         document.getElementById('level-picker').classList.add('hidden');
+        // Reset reaction UI for next round
+        document.querySelectorAll('.reaction-btn').forEach(b => b.classList.remove('mine'));
+        document.getElementById('partner-reaction').textContent = '';
       } else {
-        // Resync of the same question (e.g. reconnect mid-typing). Keep typed answer
-        // and submitted state — answer_status will re-confirm submission if needed.
         if (!screens.game.classList.contains('active')) show('game');
       }
     });
@@ -761,8 +907,59 @@
         grid.appendChild(card);
       });
       document.getElementById('reveal-question').textContent = data.question;
+
+      // Sync indicator
+      const syncBadge = document.getElementById('sync-badge');
+      const syncText = document.getElementById('sync-text');
+      const syncStreakEl = document.getElementById('sync-streak');
+      if (data.synced) {
+        const sec = Math.max(1, Math.round((data.syncDeltaMs || 0) / 1000));
+        syncText.textContent = sec <= 1 ? 'Synced ⚡ (under 1s)' : 'Synced ⚡ in ' + sec + 's';
+        if (data.syncStreak && data.syncStreak >= 2) {
+          syncStreakEl.textContent = '🔥 ' + data.syncStreak + ' in a row';
+          syncStreakEl.classList.remove('hidden');
+        } else {
+          syncStreakEl.classList.add('hidden');
+        }
+        syncBadge.classList.remove('hidden');
+      } else {
+        syncBadge.classList.add('hidden');
+      }
+
+      updateRoundMeta(data.roundNumber, state.highestLevel || data.level);
       document.getElementById('question-card').classList.add('hidden');
       document.getElementById('reveal-card').classList.remove('hidden');
+    });
+
+    // Reactions: tap an emoji, partner sees it
+    document.querySelectorAll('.reaction-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const emoji = btn.getAttribute('data-emoji');
+        const same = state.myReaction === emoji;
+        state.myReaction = same ? null : emoji;
+        document.querySelectorAll('.reaction-btn').forEach(b => b.classList.remove('mine'));
+        if (!same) btn.classList.add('mine');
+        socket.emit('react', { emoji: same ? '' : emoji });
+      });
+    });
+
+    socket.on('reactions_update', (data) => {
+      const partnerReactionEl = document.getElementById('partner-reaction');
+      const reactions = (data && data.reactions) || {};
+      const partnerEntry = Object.entries(reactions).find(([id]) => id !== state.playerId);
+      if (partnerEntry) {
+        const [, emoji] = partnerEntry;
+        const partnerName = (state.players.find(p => p.id !== state.playerId) || {}).name || 'Partner';
+        partnerReactionEl.innerHTML = partnerName + ' reacted: <span class="reaction-emoji">' + emoji + '</span>';
+      } else {
+        partnerReactionEl.textContent = '';
+      }
+      // Highlight my own reaction button if present
+      const mine = reactions[state.playerId];
+      document.querySelectorAll('.reaction-btn').forEach(b => {
+        b.classList.toggle('mine', mine && b.getAttribute('data-emoji') === mine);
+      });
+      if (mine) state.myReaction = mine;
     });
 
     document.getElementById('btn-next').addEventListener('click', () => {

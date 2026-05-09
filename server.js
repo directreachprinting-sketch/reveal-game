@@ -20,9 +20,13 @@ const questions = JSON.parse(
 // roomCode -> {
 //   players: Map(playerId -> { socketId, name, disconnectedAt }),
 //   currentQuestion, currentLevel,
-//   answers: Map(playerId -> text)
+//   answers: Map(playerId -> text),
+//   submitTimes: Map(playerId -> timestamp),
+//   reactions: Map(playerId -> emoji),
+//   roundNumber, syncStreak, highestLevel,
 // }
 const rooms = new Map();
+const SYNC_WINDOW_MS = 5000; // both submit within this → "synced"
 
 // Rooms stay alive when players disconnect — they can rejoin anytime with the same code
 // from the same device. After 24h of total inactivity (no one connected), the room is swept.
@@ -75,11 +79,36 @@ function tryFinalizeReveal(code) {
     name: p.name,
     answer: room.answers.get(id) || '',
   }));
+  // Sync metric: did both submit within SYNC_WINDOW_MS of each other?
+  const times = Array.from(room.submitTimes.values());
+  let synced = false;
+  let syncDeltaMs = null;
+  if (times.length === 2) {
+    syncDeltaMs = Math.abs(times[0] - times[1]);
+    synced = syncDeltaMs <= SYNC_WINDOW_MS;
+  }
+  if (synced) {
+    room.syncStreak = (room.syncStreak || 0) + 1;
+  } else {
+    room.syncStreak = 0;
+  }
   io.to(code).emit('reveal', {
     question: room.currentQuestion,
     level: room.currentLevel,
+    roundNumber: room.roundNumber,
     answers: reveal,
+    synced,
+    syncDeltaMs,
+    syncStreak: room.syncStreak,
   });
+}
+
+function broadcastReactions(code) {
+  const room = rooms.get(code);
+  if (!room) return;
+  const obj = {};
+  for (const [pid, emoji] of room.reactions.entries()) obj[pid] = emoji;
+  io.to(code).emit('reactions_update', { reactions: obj });
 }
 
 io.on('connection', (socket) => {
@@ -99,6 +128,11 @@ io.on('connection', (socket) => {
         currentQuestion: null,
         currentLevel: null,
         answers: new Map(),
+        submitTimes: new Map(),
+        reactions: new Map(),
+        roundNumber: 0,
+        syncStreak: 0,
+        highestLevel: 0,
       });
       socket.join(code);
       myRoomCode = code;
@@ -138,6 +172,8 @@ io.on('connection', (socket) => {
         socket.emit('question', {
           level: room.currentLevel,
           question: room.currentQuestion,
+          roundNumber: room.roundNumber,
+          highestLevel: room.highestLevel,
         });
         socket.emit('answer_status', {
           submitted: Array.from(room.answers.keys()),
@@ -152,11 +188,27 @@ io.on('connection', (socket) => {
             name: p2.name,
             answer: room.answers.get(id) || '',
           }));
+          const times = Array.from(room.submitTimes.values());
+          let synced = false, syncDeltaMs = null;
+          if (times.length === 2) {
+            syncDeltaMs = Math.abs(times[0] - times[1]);
+            synced = syncDeltaMs <= SYNC_WINDOW_MS;
+          }
           socket.emit('reveal', {
             question: room.currentQuestion,
             level: room.currentLevel,
+            roundNumber: room.roundNumber,
             answers: reveal,
+            synced,
+            syncDeltaMs,
+            syncStreak: room.syncStreak || 0,
           });
+          // Also send any reactions already in
+          if (room.reactions.size > 0) {
+            const obj = {};
+            for (const [pid, emoji] of room.reactions.entries()) obj[pid] = emoji;
+            socket.emit('reactions_update', { reactions: obj });
+          }
         }
       } else {
         // No active question — partner may have hit Next Question while we were away
@@ -192,14 +244,30 @@ io.on('connection', (socket) => {
     const room = rooms.get(myRoomCode);
     if (!room) return;
     if (room.players.size < 2) return;
-    const level = Number(payload && payload.level);
-    if (!Number.isInteger(level) || level < 1 || level > 10) return;
+    let level = Number(payload && payload.level);
+    // "Surprise me" — if level isn't valid, pick a random one
+    if (!Number.isInteger(level) || level < 1 || level > 10) {
+      if (payload && payload.random) {
+        level = 1 + Math.floor(Math.random() * 10);
+      } else {
+        return;
+      }
+    }
     const q = pickRandomQuestion(level);
     if (!q) return;
     room.currentLevel = level;
     room.currentQuestion = q;
     room.answers = new Map();
-    io.to(myRoomCode).emit('question', { level, question: q });
+    room.submitTimes = new Map();
+    room.reactions = new Map();
+    room.roundNumber = (room.roundNumber || 0) + 1;
+    if (level > (room.highestLevel || 0)) room.highestLevel = level;
+    io.to(myRoomCode).emit('question', {
+      level,
+      question: q,
+      roundNumber: room.roundNumber,
+      highestLevel: room.highestLevel,
+    });
   });
 
   socket.on('submit_answer', (payload) => {
@@ -207,6 +275,9 @@ io.on('connection', (socket) => {
     const room = rooms.get(myRoomCode);
     if (!room || !room.currentQuestion) return;
     const text = String((payload && payload.text) || '').slice(0, 2000);
+    if (!room.answers.has(myPlayerId)) {
+      room.submitTimes.set(myPlayerId, Date.now());
+    }
     room.answers.set(myPlayerId, text);
 
     io.to(myRoomCode).emit('answer_status', {
@@ -217,6 +288,19 @@ io.on('connection', (socket) => {
     tryFinalizeReveal(myRoomCode);
   });
 
+  socket.on('react', (payload) => {
+    if (!myRoomCode || !myPlayerId) return;
+    const room = rooms.get(myRoomCode);
+    if (!room) return;
+    const emoji = String((payload && payload.emoji) || '').slice(0, 8);
+    if (!emoji) {
+      room.reactions.delete(myPlayerId);
+    } else {
+      room.reactions.set(myPlayerId, emoji);
+    }
+    broadcastReactions(myRoomCode);
+  });
+
   socket.on('next_question', () => {
     if (!myRoomCode) return;
     const room = rooms.get(myRoomCode);
@@ -224,6 +308,8 @@ io.on('connection', (socket) => {
     room.currentQuestion = null;
     room.currentLevel = null;
     room.answers = new Map();
+    room.submitTimes = new Map();
+    room.reactions = new Map();
     io.to(myRoomCode).emit('next_round');
   });
 
