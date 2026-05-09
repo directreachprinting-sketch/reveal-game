@@ -552,8 +552,8 @@
           <button class="secondary" id="btn-surprise">Surprise me</button>
         </div>
         <div class="unlock-section">
-          <button class="unlock-btn" id="btn-unlock" type="button">🔒 Unlock the deep end</button>
-          <div class="unlock-hint" id="unlock-hint">Both must tap to open levels 8–10</div>
+          <button class="unlock-btn" id="btn-unlock" type="button">Unlock higher levels</button>
+          <div class="unlock-hint" id="unlock-hint">Both must tap to open levels 8 to 10</div>
         </div>
       </div>
 
@@ -573,22 +573,11 @@
       <div class="card hidden" id="reveal-card">
         <div class="level-label" style="text-align:center;">The Reveal</div>
         <div class="sync-badge hidden" id="sync-badge">
-          <span id="sync-text">Synced ⚡</span>
-          <span class="streak hidden" id="sync-streak">🔥 1</span>
+          <span id="sync-text">Synced</span>
+          <span class="streak hidden" id="sync-streak">1 in a row</span>
         </div>
         <div class="question-text" id="reveal-question"></div>
         <div class="reveal-grid" id="reveal-grid"></div>
-        <div class="reaction-section">
-          <div class="reaction-label">React to this round</div>
-          <div class="reaction-row" id="reaction-row">
-            <button class="reaction-btn" data-emoji="🔥" type="button">🔥</button>
-            <button class="reaction-btn" data-emoji="😍" type="button">😍</button>
-            <button class="reaction-btn" data-emoji="😳" type="button">😳</button>
-            <button class="reaction-btn" data-emoji="😂" type="button">😂</button>
-            <button class="reaction-btn" data-emoji="🤔" type="button">🤔</button>
-          </div>
-          <div class="partner-reaction" id="partner-reaction"></div>
-        </div>
         <button class="primary" id="btn-next" style="margin-top:18px;">Next Question</button>
       </div>
     </div>
@@ -612,13 +601,13 @@
     });
 
     const TONES = {
-      1: 'Surface — getting to know you',
+      1: 'Surface, getting to know you',
       2: 'Light personal',
-      3: 'Personality & values',
+      3: 'Personality and values',
       4: 'A little flirty',
       5: 'Personal stories',
-      6: 'Romantic & emotional',
-      7: 'Flirty & suggestive',
+      6: 'Romantic and emotional',
+      7: 'Flirty and suggestive',
       8: 'Spicy',
       9: 'Explicit',
       10: 'No-holds-barred',
@@ -878,7 +867,7 @@
       const lvl = Number(slider.value);
       const locked = lvl >= state.deepEndFloor && !state.deepEndUnlocked;
       if (locked) {
-        levelTone.textContent = '🔒 Locked — unlock the deep end together';
+        levelTone.textContent = 'Locked. Unlock higher levels first.';
         levelTone.classList.add('locked');
       } else {
         levelTone.textContent = TONES[slider.value] || '';
@@ -913,10 +902,10 @@
       const btn = document.getElementById('btn-unlock');
       const hint = document.getElementById('unlock-hint');
       if (state.deepEndUnlocked) {
-        btn.textContent = '🔓 Deep end unlocked';
+        btn.textContent = 'Higher levels unlocked';
         btn.className = 'unlock-btn both-ready';
         btn.disabled = true;
-        hint.textContent = "You're both in 💜";
+        hint.textContent = "You're both in";
         return;
       }
       const youReady = state.readyToUnlock.includes(state.playerId);
@@ -925,16 +914,16 @@
       btn.disabled = false;
       btn.classList.remove('partner-ready', 'you-ready', 'both-ready');
       if (youReady && !partnerReady) {
-        btn.textContent = '💜 You’re ready — waiting for ' + (partner && partner.name ? partner.name : 'partner');
+        btn.textContent = "You're ready, waiting for " + (partner && partner.name ? partner.name : 'partner');
         btn.classList.add('you-ready');
         hint.textContent = 'Tap again to un-ready';
       } else if (!youReady && partnerReady) {
-        btn.textContent = '💜 ' + (partner && partner.name ? partner.name : 'Partner') + ' is ready — tap to match';
+        btn.textContent = (partner && partner.name ? partner.name : 'Partner') + ' is ready, tap to match';
         btn.classList.add('partner-ready');
-        hint.textContent = 'Both must tap to open levels 8–10';
+        hint.textContent = 'Both must tap to open levels 8 to 10';
       } else {
-        btn.textContent = '🔒 Unlock the deep end';
-        hint.textContent = 'Both must tap to open levels 8–10';
+        btn.textContent = 'Unlock higher levels';
+        hint.textContent = 'Both must tap to open levels 8 to 10';
       }
     }
 
@@ -960,7 +949,6 @@
       if (!isSameQuestion) {
         // Brand new question: reset answer state and switch to question card
         state.submitted = false;
-        state.myReaction = null;
         document.getElementById('answer-input').value = '';
         document.getElementById('answer-input').disabled = false;
         document.getElementById('btn-submit').disabled = false;
@@ -969,9 +957,6 @@
         document.getElementById('question-card').classList.remove('hidden');
         document.getElementById('reveal-card').classList.add('hidden');
         document.getElementById('level-picker').classList.add('hidden');
-        // Reset reaction UI for next round
-        document.querySelectorAll('.reaction-btn').forEach(b => b.classList.remove('mine'));
-        document.getElementById('partner-reaction').textContent = '';
       } else {
         if (!screens.game.classList.contains('active')) show('game');
       }
@@ -1025,9 +1010,9 @@
       const syncStreakEl = document.getElementById('sync-streak');
       if (data.synced) {
         const sec = Math.max(1, Math.round((data.syncDeltaMs || 0) / 1000));
-        syncText.textContent = sec <= 1 ? 'Synced ⚡ (under 1s)' : 'Synced ⚡ in ' + sec + 's';
+        syncText.textContent = sec <= 1 ? 'Synced under a second apart' : 'Synced ' + sec + ' seconds apart';
         if (data.syncStreak && data.syncStreak >= 2) {
-          syncStreakEl.textContent = '🔥 ' + data.syncStreak + ' in a row';
+          syncStreakEl.textContent = data.syncStreak + ' in a row';
           syncStreakEl.classList.remove('hidden');
         } else {
           syncStreakEl.classList.add('hidden');
@@ -1042,36 +1027,7 @@
       document.getElementById('reveal-card').classList.remove('hidden');
     });
 
-    // Reactions: tap an emoji, partner sees it
-    document.querySelectorAll('.reaction-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const emoji = btn.getAttribute('data-emoji');
-        const same = state.myReaction === emoji;
-        state.myReaction = same ? null : emoji;
-        document.querySelectorAll('.reaction-btn').forEach(b => b.classList.remove('mine'));
-        if (!same) btn.classList.add('mine');
-        socket.emit('react', { emoji: same ? '' : emoji });
-      });
-    });
-
-    socket.on('reactions_update', (data) => {
-      const partnerReactionEl = document.getElementById('partner-reaction');
-      const reactions = (data && data.reactions) || {};
-      const partnerEntry = Object.entries(reactions).find(([id]) => id !== state.playerId);
-      if (partnerEntry) {
-        const [, emoji] = partnerEntry;
-        const partnerName = (state.players.find(p => p.id !== state.playerId) || {}).name || 'Partner';
-        partnerReactionEl.innerHTML = partnerName + ' reacted: <span class="reaction-emoji">' + emoji + '</span>';
-      } else {
-        partnerReactionEl.textContent = '';
-      }
-      // Highlight my own reaction button if present
-      const mine = reactions[state.playerId];
-      document.querySelectorAll('.reaction-btn').forEach(b => {
-        b.classList.toggle('mine', mine && b.getAttribute('data-emoji') === mine);
-      });
-      if (mine) state.myReaction = mine;
-    });
+    // Reactions feature removed
 
     document.getElementById('btn-next').addEventListener('click', () => {
       socket.emit('next_question');
