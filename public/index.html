@@ -296,6 +296,16 @@
   .hidden { display: none !important; }
   .row { display: flex; gap: 10px; }
   .row > * { flex: 1; }
+  .reconnect-banner {
+    background: rgba(251, 191, 36, 0.15);
+    border: 1px solid rgba(251, 191, 36, 0.4);
+    color: #fcd34d;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 13px;
+    text-align: center;
+    margin-bottom: 4px;
+  }
 </style>
 </head>
 <body>
@@ -341,6 +351,7 @@
     <!-- GAME -->
     <div class="screen" id="screen-game">
       <div class="room-tag" id="room-tag-game"></div>
+      <div class="reconnect-banner hidden" id="reconnect-banner">Partner reconnecting...</div>
 
       <div class="card level-section" id="level-picker">
         <div class="level-label">Level</div>
@@ -382,7 +393,12 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io();
+    const socket = io({
+      reconnection: true,
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 3000,
+      reconnectionAttempts: Infinity,
+    });
 
     const TONES = {
       1: 'Surface — getting to know you',
@@ -408,21 +424,87 @@
       screens[name].classList.add('active');
     }
 
+    // Stable per-device player ID — survives reloads, used to reconnect into the same room
+    function getPlayerId() {
+      let id = null;
+      try { id = localStorage.getItem('reveal_player_id'); } catch (e) {}
+      if (!id) {
+        id = 'p_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+        try { localStorage.setItem('reveal_player_id', id); } catch (e) {}
+      }
+      return id;
+    }
+
+    function saveSession(code, name) {
+      try {
+        sessionStorage.setItem('reveal_room', code);
+        if (name) sessionStorage.setItem('reveal_name', name);
+      } catch (e) {}
+    }
+    function clearSession() {
+      try {
+        sessionStorage.removeItem('reveal_room');
+        sessionStorage.removeItem('reveal_name');
+      } catch (e) {}
+    }
+    function getSession() {
+      try {
+        return {
+          room: sessionStorage.getItem('reveal_room'),
+          name: sessionStorage.getItem('reveal_name'),
+        };
+      } catch (e) { return { room: null, name: null }; }
+    }
+
     let state = {
       code: null,
-      myId: null,
+      playerId: getPlayerId(),
+      name: null,
       players: [],
       currentQuestion: null,
       submitted: false,
+      onGameScreen: false,
     };
 
+    function setReconnectBanner(visible, text) {
+      const el = document.getElementById('reconnect-banner');
+      if (text) el.textContent = text;
+      el.classList.toggle('hidden', !visible);
+    }
+
     socket.on('connect', () => {
-      state.myId = socket.id;
       // If URL has ?room=CODE, prefill join field
       const params = new URLSearchParams(location.search);
       const roomParam = params.get('room');
       if (roomParam) {
-        document.getElementById('join-code').value = roomParam.toUpperCase();
+        const input = document.getElementById('join-code');
+        if (!input.value) input.value = roomParam.toUpperCase();
+      }
+
+      // Auto-rejoin: if we have a saved session, try to rejoin
+      const saved = getSession();
+      if (saved.room && state.code !== saved.room) {
+        const name = saved.name || getName() || 'Player';
+        socket.emit('join_room', { code: saved.room, name, playerId: state.playerId }, (res) => {
+          if (res && res.ok) {
+            state.code = res.code;
+            state.name = name;
+            saveSession(res.code, name);
+            document.getElementById('room-tag-game').textContent = 'ROOM ' + res.code;
+            state.onGameScreen = true;
+            show('game');
+          } else {
+            // Room is gone or full — clean up and stay on home
+            clearSession();
+          }
+        });
+      }
+    });
+
+    socket.on('disconnect', () => {
+      // We lost the server. If we were in a game, show a reconnecting hint.
+      if (state.onGameScreen) {
+        setReconnectBanner(true, 'Reconnecting...');
       }
     });
 
@@ -439,9 +521,12 @@
     }
 
     document.getElementById('btn-create').addEventListener('click', () => {
-      socket.emit('create_room', { name: getName() || 'Player 1' }, (res) => {
+      const name = getName() || 'Player 1';
+      socket.emit('create_room', { name, playerId: state.playerId }, (res) => {
         if (!res.ok) return showError(res.error || 'Failed to create room');
         state.code = res.code;
+        state.name = name;
+        saveSession(res.code, name);
         document.getElementById('room-code-display').textContent = res.code;
         show('waiting');
       });
@@ -450,10 +535,14 @@
     document.getElementById('btn-join').addEventListener('click', () => {
       const code = document.getElementById('join-code').value.trim().toUpperCase();
       if (code.length !== 4) return showError('Enter a 4-letter code');
-      socket.emit('join_room', { code, name: getName() || 'Player 2' }, (res) => {
+      const name = getName() || 'Player 2';
+      socket.emit('join_room', { code, name, playerId: state.playerId }, (res) => {
         if (!res.ok) return showError(res.error || 'Failed to join');
         state.code = res.code;
+        state.name = name;
+        saveSession(res.code, name);
         document.getElementById('room-tag-game').textContent = 'ROOM ' + res.code;
+        state.onGameScreen = true;
         show('game');
       });
     });
@@ -473,11 +562,24 @@
 
     socket.on('room_state', (data) => {
       state.players = data.players;
+      // Hide reconnect banner if all players are connected
+      const allConnected = data.players.every(p => p.connected !== false);
+      if (allConnected) setReconnectBanner(false);
       if (data.players.length === 2) {
-        // Both joined — go to game screen
         document.getElementById('room-tag-game').textContent = 'ROOM ' + state.code;
+        state.onGameScreen = true;
         show('game');
       }
+    });
+
+    socket.on('player_disconnecting', (data) => {
+      // Soft state — partner may come back within the grace period.
+      const partner = (data && data.name) ? data.name : 'Partner';
+      setReconnectBanner(true, partner + ' lost connection — waiting...');
+    });
+
+    socket.on('player_reconnected', (data) => {
+      setReconnectBanner(false);
     });
 
     // Level slider
@@ -523,15 +625,27 @@
       document.getElementById('submit-waiting').classList.remove('hidden');
     });
 
+    socket.on('answer_status', (data) => {
+      // If we previously submitted and a refresh/reconnect happened, restore the waiting state
+      if (data && Array.isArray(data.submitted) && data.submitted.includes(state.playerId)) {
+        state.submitted = true;
+        document.getElementById('answer-input').disabled = true;
+        document.getElementById('btn-submit').disabled = true;
+        document.getElementById('btn-submit').textContent = 'Submitted';
+        document.getElementById('submit-waiting').classList.remove('hidden');
+      }
+    });
+
     socket.on('reveal', (data) => {
       const grid = document.getElementById('reveal-grid');
       grid.innerHTML = '';
       data.answers.forEach(a => {
+        const isMe = a.id === state.playerId;
         const card = document.createElement('div');
-        card.className = 'reveal-card' + (a.id === state.myId ? ' you' : '');
+        card.className = 'reveal-card' + (isMe ? ' you' : '');
         const name = document.createElement('div');
         name.className = 'reveal-name';
-        name.textContent = (a.id === state.myId ? 'You' : a.name) || (a.id === state.myId ? 'You' : 'Them');
+        name.textContent = isMe ? 'You' : (a.name || 'Them');
         const answer = document.createElement('div');
         answer.className = 'reveal-answer';
         answer.textContent = a.answer || '(no answer)';
@@ -555,10 +669,18 @@
     });
 
     socket.on('player_left', () => {
+      // Only fires after the 60-second grace period — the partner is really gone.
+      state.onGameScreen = false;
+      clearSession();
       show('disconnect');
     });
 
     document.getElementById('btn-home').addEventListener('click', () => {
+      // Explicit leave — tell the server, clear session, go home
+      try { socket.emit('leave_room'); } catch (e) {}
+      clearSession();
+      state.code = null;
+      state.onGameScreen = false;
       location.href = '/';
     });
 
