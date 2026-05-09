@@ -544,6 +544,36 @@
       }
     });
 
+    // When the tab becomes visible again (phone unlock, app switch back),
+    // force-resync if the socket has gone quiet.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!socket.connected) {
+        // Socket.IO will retry on its own, but kick it now to speed things up
+        try { socket.connect(); } catch (e) {}
+        return;
+      }
+      // Socket says it's connected — but it might be a zombie. Re-emit join_room
+      // with our saved session to confirm the server still knows about us and to
+      // pull current question/state.
+      const saved = getSession();
+      if (saved.room) {
+        const name = saved.name || 'Player';
+        socket.emit('join_room', { code: saved.room, name, playerId: state.playerId }, (res) => {
+          if (res && res.ok) {
+            state.code = res.code;
+            state.name = name;
+          } else {
+            // Room is gone — back to home, clear stale session
+            clearSession();
+            state.code = null;
+            state.onGameScreen = false;
+            show('home');
+          }
+        });
+      }
+    });
+
     function showError(msg) {
       const el = document.getElementById('home-error');
       el.textContent = msg;

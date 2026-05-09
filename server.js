@@ -131,7 +131,7 @@ io.on('connection', (socket) => {
       // Notify others the player is back
       io.to(code).emit('player_reconnected', { playerId, name: p.name });
       broadcastRoomState(code);
-      // Resend current question + answer status
+      // Resend current question + answer status, OR tell client to reset to level picker
       if (room.currentQuestion) {
         socket.emit('question', {
           level: room.currentLevel,
@@ -141,7 +141,6 @@ io.on('connection', (socket) => {
           submitted: Array.from(room.answers.keys()),
           total: room.players.size,
         });
-        // If both have submitted while we were away, push the reveal
         if (
           room.answers.size === room.players.size &&
           room.players.size === 2
@@ -157,6 +156,9 @@ io.on('connection', (socket) => {
             answers: reveal,
           });
         }
+      } else {
+        // No active question — partner may have hit Next Question while we were away
+        socket.emit('next_round');
       }
       return;
     }
