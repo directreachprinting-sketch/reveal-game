@@ -471,24 +471,30 @@
       return id;
     }
 
+    // Session uses localStorage with a 24h freshness window so the user can fully close
+    // the browser and rejoin the same room when they come back later.
+    const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
     function saveSession(code, name) {
       try {
-        sessionStorage.setItem('reveal_room', code);
-        if (name) sessionStorage.setItem('reveal_name', name);
+        localStorage.setItem('reveal_session', JSON.stringify({
+          code, name: name || null, ts: Date.now(),
+        }));
       } catch (e) {}
     }
     function clearSession() {
-      try {
-        sessionStorage.removeItem('reveal_room');
-        sessionStorage.removeItem('reveal_name');
-      } catch (e) {}
+      try { localStorage.removeItem('reveal_session'); } catch (e) {}
     }
     function getSession() {
       try {
-        return {
-          room: sessionStorage.getItem('reveal_room'),
-          name: sessionStorage.getItem('reveal_name'),
-        };
+        const raw = localStorage.getItem('reveal_session');
+        if (!raw) return { room: null, name: null };
+        const parsed = JSON.parse(raw);
+        if (!parsed || !parsed.code) return { room: null, name: null };
+        if (Date.now() - (parsed.ts || 0) > SESSION_TTL_MS) {
+          localStorage.removeItem('reveal_session');
+          return { room: null, name: null };
+        }
+        return { room: parsed.code, name: parsed.name };
       } catch (e) { return { room: null, name: null }; }
     }
 
@@ -517,7 +523,8 @@
         if (!input.value) input.value = roomParam.toUpperCase();
       }
 
-      // Auto-rejoin: if we have a saved session, try to rejoin
+      // Auto-rejoin: if we have a saved session, try to rejoin.
+      // Screen choice (waiting vs game) is driven by the room_state event that follows.
       const saved = getSession();
       if (saved.room && state.code !== saved.room) {
         const name = saved.name || getName() || 'Player';
@@ -527,8 +534,7 @@
             state.name = name;
             saveSession(res.code, name);
             document.getElementById('room-tag-game').textContent = 'ROOM ' + res.code;
-            state.onGameScreen = true;
-            show('game');
+            document.getElementById('room-code-display').textContent = res.code;
           } else {
             // Room is gone or full — clean up and stay on home
             clearSession();
@@ -646,10 +652,22 @@
       const allConnected = data.players.every(p => p.connected !== false);
       if (allConnected) setReconnectBanner(false);
       updatePartnerTag();
-      if (data.players.length === 2) {
+
+      if (!state.code) return; // not in a room yet (still on home screen)
+
+      // Screen choice is driven by player count.
+      // Don't override the disconnect screen — that's a terminal state until user clicks home.
+      if (screens.disconnect.classList.contains('active')) return;
+
+      if (data.players.length >= 2) {
         document.getElementById('room-tag-game').textContent = 'ROOM ' + state.code;
         state.onGameScreen = true;
         show('game');
+      } else if (data.players.length === 1) {
+        // Alone in the room — show waiting screen with the code
+        document.getElementById('room-code-display').textContent = state.code;
+        state.onGameScreen = false;
+        show('waiting');
       }
     });
 
@@ -680,18 +698,26 @@
     });
 
     socket.on('question', (data) => {
+      const isSameQuestion = state.currentQuestion === data.question;
       state.currentQuestion = data.question;
-      state.submitted = false;
       document.getElementById('q-level').textContent = data.level;
       document.getElementById('question-text').textContent = data.question;
-      document.getElementById('answer-input').value = '';
-      document.getElementById('answer-input').disabled = false;
-      document.getElementById('btn-submit').disabled = false;
-      document.getElementById('btn-submit').textContent = 'Submit';
-      document.getElementById('submit-waiting').classList.add('hidden');
-      document.getElementById('question-card').classList.remove('hidden');
-      document.getElementById('reveal-card').classList.add('hidden');
-      document.getElementById('level-picker').classList.add('hidden');
+      if (!isSameQuestion) {
+        // Brand new question: reset answer state and switch to question card
+        state.submitted = false;
+        document.getElementById('answer-input').value = '';
+        document.getElementById('answer-input').disabled = false;
+        document.getElementById('btn-submit').disabled = false;
+        document.getElementById('btn-submit').textContent = 'Submit';
+        document.getElementById('submit-waiting').classList.add('hidden');
+        document.getElementById('question-card').classList.remove('hidden');
+        document.getElementById('reveal-card').classList.add('hidden');
+        document.getElementById('level-picker').classList.add('hidden');
+      } else {
+        // Resync of the same question (e.g. reconnect mid-typing). Keep typed answer
+        // and submitted state — answer_status will re-confirm submission if needed.
+        if (!screens.game.classList.contains('active')) show('game');
+      }
     });
 
     document.getElementById('btn-submit').addEventListener('click', () => {

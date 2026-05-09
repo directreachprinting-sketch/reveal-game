@@ -270,6 +270,8 @@ io.on('connection', (socket) => {
       playerId,
       name: p.name,
     });
+    // Also push fresh room state so the connected partner's UI updates the "away" dot.
+    broadcastRoomState(code);
   });
 });
 
