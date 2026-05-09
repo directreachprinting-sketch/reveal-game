@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0014" />
+<title>Reveal</title>
+<style>
+  :root {
+    --bg-1: #0a0014;
+    --bg-2: #1a0530;
+    --bg-3: #2d0a4a;
+    --accent: #c084fc;
+    --accent-glow: rgba(192, 132, 252, 0.5);
+    --accent-2: #f472b6;
+    --text: #f5f0ff;
+    --text-dim: #b8a8d4;
+    --card: rgba(255, 255, 255, 0.05);
+    --card-border: rgba(192, 132, 252, 0.2);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(ellipse at top, var(--bg-3) 0%, transparent 60%),
+      radial-gradient(ellipse at bottom, var(--bg-2) 0%, transparent 60%),
+      var(--bg-1);
+    background-attachment: fixed;
+    overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 20px 40px;
+  }
+  .app {
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .brand {
+    text-align: center;
+    margin-top: 12px;
+  }
+  .brand h1 {
+    font-size: 36px;
+    margin: 0;
+    font-weight: 800;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .brand p {
+    margin: 6px 0 0;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .screen {
+    display: none;
+    flex-direction: column;
+    gap: 20px;
+    animation: fade 0.3s ease;
+  }
+  .screen.active { display: flex; }
+  @keyframes fade {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 20px;
+    padding: 24px;
+    backdrop-filter: blur(10px);
+  }
+  button.primary, button.secondary {
+    width: 100%;
+    padding: 18px;
+    font-size: 17px;
+    font-weight: 600;
+    border-radius: 14px;
+    border: none;
+    cursor: pointer;
+    transition: transform 0.1s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    font-family: inherit;
+    color: white;
+  }
+  button.primary {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 0 24px var(--accent-glow);
+  }
+  button.primary:active { transform: scale(0.98); }
+  button.primary:disabled {
+    opacity: 0.4;
+    box-shadow: none;
+    cursor: not-allowed;
+  }
+  button.secondary {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid var(--card-border);
+  }
+  button.secondary:active { transform: scale(0.98); }
+  input[type="text"], textarea {
+    width: 100%;
+    padding: 16px;
+    border-radius: 14px;
+    border: 1px solid var(--card-border);
+    background: rgba(0,0,0,0.3);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 16px;
+    outline: none;
+  }
+  input[type="text"]:focus, textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  textarea {
+    min-height: 140px;
+    resize: vertical;
+  }
+  label.field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+  /* Home */
+  .home-actions { display: flex; flex-direction: column; gap: 12px; }
+  .divider {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 13px;
+    margin: 4px 0;
+    position: relative;
+  }
+  .divider::before, .divider::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 35%;
+    height: 1px;
+    background: var(--card-border);
+  }
+  .divider::before { left: 0; }
+  .divider::after { right: 0; }
+  .join-row { display: flex; gap: 8px; }
+  .join-row input {
+    flex: 1;
+    text-transform: uppercase;
+    letter-spacing: 4px;
+    font-weight: 700;
+    text-align: center;
+  }
+  .join-row button { width: auto; padding: 16px 20px; }
+  /* Waiting */
+  .room-code {
+    font-size: 64px;
+    font-weight: 800;
+    text-align: center;
+    letter-spacing: 12px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin: 8px 0;
+  }
+  .waiting-status {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 15px;
+  }
+  .waiting-status .dot {
+    display: inline-block;
+    animation: blink 1.4s infinite;
+  }
+  .waiting-status .dot:nth-child(2) { animation-delay: 0.2s; }
+  .waiting-status .dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+  }
+  /* Game */
+  .level-section { text-align: center; }
+  .level-display {
+    font-size: 56px;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+  }
+  .level-label {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+  .level-tone {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 4px;
+    min-height: 18px;
+  }
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 8px;
+    background: linear-gradient(90deg, #6366f1, var(--accent), var(--accent-2), #ef4444);
+    border-radius: 4px;
+    outline: none;
+    margin: 16px 0 8px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: white;
+    cursor: pointer;
+    box-shadow: 0 0 16px var(--accent-glow);
+    border: 3px solid var(--accent);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: white;
+    cursor: pointer;
+    border: 3px solid var(--accent);
+  }
+  .question-text {
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.4;
+    text-align: center;
+    margin: 8px 0 16px;
+  }
+  .reveal-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .reveal-card {
+    background: rgba(0,0,0,0.3);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 16px;
+  }
+  .reveal-card.you { border-color: var(--accent); }
+  .reveal-name {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--accent);
+    margin-bottom: 8px;
+    font-weight: 700;
+  }
+  .reveal-answer {
+    font-size: 16px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .room-tag {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 12px;
+    letter-spacing: 2px;
+  }
+  .error {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #fca5a5;
+    padding: 12px;
+    border-radius: 12px;
+    font-size: 14px;
+    text-align: center;
+  }
+  .hidden { display: none !important; }
+  .row { display: flex; gap: 10px; }
+  .row > * { flex: 1; }
+</style>
+</head>
+<body>
+  <div class="app">
+    <div class="brand">
+      <h1>Reveal</h1>
+      <p>Two answers. One moment.</p>
+    </div>
+
+    <!-- HOME -->
+    <div class="screen active" id="screen-home">
+      <div class="card">
+        <label class="field">
+          Your name (optional)
+          <input type="text" id="name-input" placeholder="You" maxlength="20" />
+        </label>
+      </div>
+      <div class="card home-actions">
+        <button class="primary" id="btn-create">Create a Room</button>
+        <div class="divider">or</div>
+        <div class="join-row">
+          <input type="text" id="join-code" placeholder="CODE" maxlength="4" autocomplete="off" />
+          <button class="secondary" id="btn-join">Join</button>
+        </div>
+        <div class="error hidden" id="home-error"></div>
+      </div>
+    </div>
+
+    <!-- WAITING -->
+    <div class="screen" id="screen-waiting">
+      <div class="card">
+        <div class="level-label" style="text-align:center;">Room Code</div>
+        <div class="room-code" id="room-code-display">----</div>
+        <div class="waiting-status">
+          waiting for player two<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
+        </div>
+      </div>
+      <div class="card">
+        <button class="secondary" id="btn-copy-link">Copy invite link</button>
+      </div>
+    </div>
+
+    <!-- GAME -->
+    <div class="screen" id="screen-game">
+      <div class="room-tag" id="room-tag-game"></div>
+
+      <div class="card level-section" id="level-picker">
+        <div class="level-label">Level</div>
+        <div class="level-display" id="level-display">5</div>
+        <input type="range" id="level-slider" min="1" max="10" value="5" />
+        <div class="level-tone" id="level-tone"></div>
+        <button class="primary" id="btn-get-question" style="margin-top:16px;">Get a Question</button>
+      </div>
+
+      <div class="card hidden" id="question-card">
+        <div class="level-label" style="text-align:center;">Level <span id="q-level">1</span></div>
+        <div class="question-text" id="question-text"></div>
+        <label class="field">
+          Your answer
+          <textarea id="answer-input" placeholder="Type your answer..." maxlength="2000"></textarea>
+        </label>
+        <button class="primary" id="btn-submit" style="margin-top:14px;">Submit</button>
+        <div class="waiting-status hidden" id="submit-waiting" style="margin-top:14px;">
+          waiting for the other answer<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
+        </div>
+      </div>
+
+      <div class="card hidden" id="reveal-card">
+        <div class="level-label" style="text-align:center;">The Reveal</div>
+        <div class="question-text" id="reveal-question"></div>
+        <div class="reveal-grid" id="reveal-grid"></div>
+        <button class="primary" id="btn-next" style="margin-top:18px;">Next Question</button>
+      </div>
+    </div>
+
+    <!-- DISCONNECT -->
+    <div class="screen" id="screen-disconnect">
+      <div class="card">
+        <div class="question-text">The other player left.</div>
+        <button class="primary" id="btn-home">Back to Home</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    const TONES = {
+      1: 'Surface — getting to know you',
+      2: 'Light personal',
+      3: 'Personality & values',
+      4: 'A little flirty',
+      5: 'Personal stories',
+      6: 'Romantic & emotional',
+      7: 'Flirty & suggestive',
+      8: 'Spicy',
+      9: 'Explicit',
+      10: 'No-holds-barred',
+    };
+
+    const screens = {
+      home: document.getElementById('screen-home'),
+      waiting: document.getElementById('screen-waiting'),
+      game: document.getElementById('screen-game'),
+      disconnect: document.getElementById('screen-disconnect'),
+    };
+    function show(name) {
+      Object.values(screens).forEach(s => s.classList.remove('active'));
+      screens[name].classList.add('active');
+    }
+
+    let state = {
+      code: null,
+      myId: null,
+      players: [],
+      currentQuestion: null,
+      submitted: false,
+    };
+
+    socket.on('connect', () => {
+      state.myId = socket.id;
+      // If URL has ?room=CODE, prefill join field
+      const params = new URLSearchParams(location.search);
+      const roomParam = params.get('room');
+      if (roomParam) {
+        document.getElementById('join-code').value = roomParam.toUpperCase();
+      }
+    });
+
+    function showError(msg) {
+      const el = document.getElementById('home-error');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+      setTimeout(() => el.classList.add('hidden'), 4000);
+    }
+
+    function getName() {
+      const v = document.getElementById('name-input').value.trim();
+      return v || null;
+    }
+
+    document.getElementById('btn-create').addEventListener('click', () => {
+      socket.emit('create_room', { name: getName() || 'Player 1' }, (res) => {
+        if (!res.ok) return showError(res.error || 'Failed to create room');
+        state.code = res.code;
+        document.getElementById('room-code-display').textContent = res.code;
+        show('waiting');
+      });
+    });
+
+    document.getElementById('btn-join').addEventListener('click', () => {
+      const code = document.getElementById('join-code').value.trim().toUpperCase();
+      if (code.length !== 4) return showError('Enter a 4-letter code');
+      socket.emit('join_room', { code, name: getName() || 'Player 2' }, (res) => {
+        if (!res.ok) return showError(res.error || 'Failed to join');
+        state.code = res.code;
+        document.getElementById('room-tag-game').textContent = 'ROOM ' + res.code;
+        show('game');
+      });
+    });
+
+    document.getElementById('btn-copy-link').addEventListener('click', async () => {
+      const url = location.origin + '/?room=' + state.code;
+      try {
+        await navigator.clipboard.writeText(url);
+        const btn = document.getElementById('btn-copy-link');
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = orig, 1500);
+      } catch (e) {
+        prompt('Copy this link:', url);
+      }
+    });
+
+    socket.on('room_state', (data) => {
+      state.players = data.players;
+      if (data.players.length === 2) {
+        // Both joined — go to game screen
+        document.getElementById('room-tag-game').textContent = 'ROOM ' + state.code;
+        show('game');
+      }
+    });
+
+    // Level slider
+    const slider = document.getElementById('level-slider');
+    const levelDisplay = document.getElementById('level-display');
+    const levelTone = document.getElementById('level-tone');
+    function updateLevelUI() {
+      levelDisplay.textContent = slider.value;
+      levelTone.textContent = TONES[slider.value] || '';
+    }
+    slider.addEventListener('input', updateLevelUI);
+    updateLevelUI();
+
+    document.getElementById('btn-get-question').addEventListener('click', () => {
+      const level = Number(slider.value);
+      socket.emit('pick_level', { level });
+    });
+
+    socket.on('question', (data) => {
+      state.currentQuestion = data.question;
+      state.submitted = false;
+      document.getElementById('q-level').textContent = data.level;
+      document.getElementById('question-text').textContent = data.question;
+      document.getElementById('answer-input').value = '';
+      document.getElementById('answer-input').disabled = false;
+      document.getElementById('btn-submit').disabled = false;
+      document.getElementById('btn-submit').textContent = 'Submit';
+      document.getElementById('submit-waiting').classList.add('hidden');
+      document.getElementById('question-card').classList.remove('hidden');
+      document.getElementById('reveal-card').classList.add('hidden');
+      document.getElementById('level-picker').classList.add('hidden');
+    });
+
+    document.getElementById('btn-submit').addEventListener('click', () => {
+      if (state.submitted) return;
+      const text = document.getElementById('answer-input').value.trim();
+      if (!text) return;
+      state.submitted = true;
+      socket.emit('submit_answer', { text });
+      document.getElementById('answer-input').disabled = true;
+      document.getElementById('btn-submit').disabled = true;
+      document.getElementById('btn-submit').textContent = 'Submitted';
+      document.getElementById('submit-waiting').classList.remove('hidden');
+    });
+
+    socket.on('reveal', (data) => {
+      const grid = document.getElementById('reveal-grid');
+      grid.innerHTML = '';
+      data.answers.forEach(a => {
+        const card = document.createElement('div');
+        card.className = 'reveal-card' + (a.id === state.myId ? ' you' : '');
+        const name = document.createElement('div');
+        name.className = 'reveal-name';
+        name.textContent = (a.id === state.myId ? 'You' : a.name) || (a.id === state.myId ? 'You' : 'Them');
+        const answer = document.createElement('div');
+        answer.className = 'reveal-answer';
+        answer.textContent = a.answer || '(no answer)';
+        card.appendChild(name);
+        card.appendChild(answer);
+        grid.appendChild(card);
+      });
+      document.getElementById('reveal-question').textContent = data.question;
+      document.getElementById('question-card').classList.add('hidden');
+      document.getElementById('reveal-card').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-next').addEventListener('click', () => {
+      socket.emit('next_question');
+    });
+
+    socket.on('next_round', () => {
+      document.getElementById('reveal-card').classList.add('hidden');
+      document.getElementById('question-card').classList.add('hidden');
+      document.getElementById('level-picker').classList.remove('hidden');
+    });
+
+    socket.on('player_left', () => {
+      show('disconnect');
+    });
+
+    document.getElementById('btn-home').addEventListener('click', () => {
+      location.href = '/';
+    });
+
+    // Auto-uppercase the join code
+    document.getElementById('join-code').addEventListener('input', (e) => {
+      e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '');
+    });
+  </script>
+</body>
+</html>
