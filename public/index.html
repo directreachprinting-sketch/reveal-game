@@ -284,6 +284,20 @@
     font-size: 12px;
     letter-spacing: 2px;
   }
+  .leave-link {
+    display: block;
+    margin: 0 auto;
+    padding: 6px 12px;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 12px;
+    text-decoration: underline;
+    cursor: pointer;
+    opacity: 0.6;
+  }
+  .leave-link:hover { opacity: 1; }
   .partner-tag {
     text-align: center;
     color: var(--accent);
@@ -522,8 +536,9 @@
           waiting for player two<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
         </div>
       </div>
-      <div class="card">
+      <div class="card" style="display:flex;flex-direction:column;gap:10px;">
         <button class="secondary" id="btn-copy-link">Copy invite link</button>
+        <button class="secondary" id="btn-waiting-home">Back to home</button>
       </div>
     </div>
 
@@ -535,6 +550,7 @@
         <span id="partner-name">—</span>
         <span class="partner-dot" id="partner-dot"></span>
       </div>
+      <button class="leave-link" id="btn-game-home" type="button">Leave room</button>
       <div class="reconnect-banner hidden" id="reconnect-banner">Partner reconnecting...</div>
 
       <div class="round-meta hidden" id="round-meta">
@@ -1046,13 +1062,17 @@
       show('disconnect');
     });
 
-    document.getElementById('btn-home').addEventListener('click', () => {
-      // Explicit leave — tell the server, clear session, go home
+    function goHome() {
       try { socket.emit('leave_room'); } catch (e) {}
       clearSession();
       state.code = null;
       state.onGameScreen = false;
       location.href = '/';
+    }
+    document.getElementById('btn-home').addEventListener('click', goHome);
+    document.getElementById('btn-waiting-home').addEventListener('click', goHome);
+    document.getElementById('btn-game-home').addEventListener('click', () => {
+      if (confirm('Leave this room and go home?')) goHome();
     });
 
     // Auto-uppercase the join code
