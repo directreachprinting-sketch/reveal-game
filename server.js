@@ -54,6 +54,17 @@ function pickRandomQuestion(level) {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+// Solo mode: no room, no partner — just pull a question at a level.
+app.get('/api/question', (req, res) => {
+  let level = Number(req.query.level);
+  if (!Number.isInteger(level) || level < 1 || level > 10) {
+    level = 1 + Math.floor(Math.random() * 10);
+  }
+  const question = pickRandomQuestion(level);
+  if (!question) return res.status(404).json({ error: 'No questions at that level' });
+  res.json({ level, question });
+});
+
 function broadcastRoomState(code) {
   const room = rooms.get(code);
   if (!room) return;

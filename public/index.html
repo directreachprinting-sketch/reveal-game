@@ -523,8 +523,32 @@
           <input type="text" id="join-code" placeholder="CODE" maxlength="4" autocomplete="off" />
           <button class="secondary" id="btn-join">Join</button>
         </div>
+        <div class="divider">or</div>
+        <button class="secondary" id="btn-solo">Just the questions</button>
         <div class="error hidden" id="home-error"></div>
       </div>
+    </div>
+
+    <!-- SOLO -->
+    <div class="screen" id="screen-solo">
+      <div class="card level-section">
+        <div class="level-label">Level</div>
+        <div class="level-display" id="solo-level-display">5</div>
+        <input type="range" id="solo-slider" min="1" max="10" value="5" />
+        <div class="level-tone" id="solo-tone"></div>
+        <div class="level-buttons">
+          <button class="primary" id="btn-solo-get">Get a Question</button>
+          <button class="secondary" id="btn-solo-surprise">Surprise me</button>
+        </div>
+      </div>
+
+      <div class="card hidden" id="solo-question-card">
+        <div class="level-label" style="text-align:center;">Level <span id="solo-q-level">1</span></div>
+        <div class="question-text" id="solo-question-text"></div>
+        <button class="primary" id="btn-solo-next">Next Question</button>
+      </div>
+
+      <button class="leave-link" id="btn-solo-home" type="button">Back to home</button>
     </div>
 
     <!-- WAITING -->
@@ -634,6 +658,7 @@
       waiting: document.getElementById('screen-waiting'),
       game: document.getElementById('screen-game'),
       disconnect: document.getElementById('screen-disconnect'),
+      solo: document.getElementById('screen-solo'),
     };
     function show(name) {
       Object.values(screens).forEach(s => s.classList.remove('active'));
@@ -686,6 +711,7 @@
       currentQuestion: null,
       submitted: false,
       onGameScreen: false,
+      soloMode: false,
       myReaction: null,
       highestLevel: 0,
       readyToUnlock: [],
@@ -717,7 +743,7 @@
       // Auto-rejoin: if we have a saved session, try to rejoin.
       // Screen choice (waiting vs game) is driven by the room_state event that follows.
       const saved = getSession();
-      if (saved.room && state.code !== saved.room) {
+      if (saved.room && state.code !== saved.room && !state.soloMode) {
         const name = saved.name || getName() || 'Player';
         socket.emit('join_room', { code: saved.room, name, playerId: state.playerId }, (res) => {
           if (res && res.ok) {
@@ -754,7 +780,7 @@
       // with our saved session to confirm the server still knows about us and to
       // pull current question/state.
       const saved = getSession();
-      if (saved.room) {
+      if (saved.room && !state.soloMode) {
         const name = saved.name || 'Player';
         socket.emit('join_room', { code: saved.room, name, playerId: state.playerId }, (res) => {
           if (res && res.ok) {
@@ -847,6 +873,7 @@
       updatePartnerTag();
 
       if (!state.code) return; // not in a room yet (still on home screen)
+      if (state.soloMode) return; // solo mode owns the screen
 
       // Screen choice is driven by player count.
       // Don't override the disconnect screen — that's a terminal state until user clicks home.
@@ -1078,6 +1105,66 @@
     // Auto-uppercase the join code
     document.getElementById('join-code').addEventListener('input', (e) => {
       e.target.value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '');
+    });
+
+    // ---- Solo mode: no room, no partner, just questions ----
+    const soloSlider = document.getElementById('solo-slider');
+    const soloTone = document.getElementById('solo-tone');
+    const soloLevelDisplay = document.getElementById('solo-level-display');
+
+    function updateSoloLevelUI() {
+      soloLevelDisplay.textContent = soloSlider.value;
+      soloTone.textContent = TONES[soloSlider.value] || '';
+    }
+    soloSlider.addEventListener('input', updateSoloLevelUI);
+    updateSoloLevelUI();
+
+    async function fetchSoloQuestion(level) {
+      const btn = document.getElementById('btn-solo-get');
+      const nextBtn = document.getElementById('btn-solo-next');
+      btn.disabled = true; nextBtn.disabled = true;
+      try {
+        const url = level ? '/api/question?level=' + level : '/api/question';
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('bad response');
+        const data = await res.json();
+        document.getElementById('solo-q-level').textContent = data.level;
+        document.getElementById('solo-question-text').textContent = data.question;
+        document.getElementById('solo-question-card').classList.remove('hidden');
+        soloSlider.value = data.level;
+        updateSoloLevelUI();
+      } catch (e) {
+        document.getElementById('solo-question-text').textContent =
+          'Could not load a question. Check your connection and try again.';
+        document.getElementById('solo-question-card').classList.remove('hidden');
+      } finally {
+        btn.disabled = false; nextBtn.disabled = false;
+      }
+    }
+
+    document.getElementById('btn-solo').addEventListener('click', () => {
+      // Leaving any room we might be in — solo is standalone
+      if (state.code) { try { socket.emit('leave_room'); } catch (e) {} }
+      clearSession();
+      state.code = null;
+      state.onGameScreen = false;
+      state.soloMode = true;
+      show('solo');
+    });
+
+    document.getElementById('btn-solo-get').addEventListener('click', () => {
+      fetchSoloQuestion(Number(soloSlider.value));
+    });
+    document.getElementById('btn-solo-surprise').addEventListener('click', () => {
+      fetchSoloQuestion(null);
+    });
+    document.getElementById('btn-solo-next').addEventListener('click', () => {
+      fetchSoloQuestion(Number(soloSlider.value));
+    });
+    document.getElementById('btn-solo-home').addEventListener('click', () => {
+      state.soloMode = false;
+      document.getElementById('solo-question-card').classList.add('hidden');
+      show('home');
     });
   </script>
 </body>
